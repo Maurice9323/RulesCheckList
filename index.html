@@ -73,6 +73,13 @@
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('body')">Body Type Rules</button>
   <button class="tab-btn" onclick="switchTab('age')">Age Rules</button>
+  <button class="tab-btn" onclick="switchTab('cup')">Cup Size</button>
+  <button class="tab-btn" onclick="switchTab('ass')">Ass Size</button>
+  <button class="tab-btn" onclick="switchTab('mouth')">Mouth Profile</button>
+  <button class="tab-btn" onclick="switchTab('sens')">Sensation</button>
+  <button class="tab-btn" onclick="switchTab('kink')">Kink</button>
+  <button class="tab-btn" onclick="switchTab('mode')">Mode</button>
+  <button class="tab-btn" onclick="switchTab('lang')">Language</button>
 </div>
 
 <!-- BODY TYPE TAB -->
@@ -127,8 +134,8 @@
 // ══════════════════════════════════════════
 // STORAGE
 // ══════════════════════════════════════════
-const BODY_KEY = 'wheel-body-rules-v1';
-const AGE_KEY = 'wheel-age-rules-v1';
+const BODY_KEY='wheel-body-rules-v1',AGE_KEY='wheel-age-rules-v1',CUP_KEY='wheel-cup-rules-v1',ASS_KEY='wheel-ass-rules-v1',MOUTH_KEY='wheel-mouth-rules-v1',SENS_KEY='wheel-sens-rules-v1',KINK_KEY='wheel-kink-rules-v1',MODE_KEY='wheel-mode-rules-v1',LANG_KEY='wheel-lang-rules-v1';
+
 
 function loadChecked(key) {
   try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { return {}; }
@@ -137,17 +144,21 @@ function saveChecked(key, data) {
   try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) {}
 }
 
-let bodyChecked = loadChecked(BODY_KEY);
-let ageChecked = loadChecked(AGE_KEY);
+let bodyChecked=loadChecked(BODY_KEY),ageChecked=loadChecked(AGE_KEY),
+cupChecked=loadChecked(CUP_KEY),assChecked=loadChecked(ASS_KEY),
+mouthChecked=loadChecked(MOUTH_KEY),sensChecked=loadChecked(SENS_KEY),
+kinkChecked=loadChecked(KINK_KEY),modeChecked=loadChecked(MODE_KEY),
+langChecked=loadChecked(LANG_KEY);
 
 // ══════════════════════════════════════════
 // TAB SWITCHING
 // ══════════════════════════════════════════
+const ALL_TABS = ['body','age','cup','ass','mouth','sens','kink','mode','lang'];
 function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&tab==='body')||(i===1&&tab==='age')));
-  document.getElementById('tab-body').classList.toggle('active', tab==='body');
-  document.getElementById('tab-age').classList.toggle('active', tab==='age');
-  if(tab==='age') renderAge();
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', ALL_TABS[i]===tab));
+  ALL_TABS.forEach(t => document.getElementById('tab-'+t).classList.toggle('active', t===tab));
+  const renders = {age:renderAge,cup:renderCup,ass:renderAss,mouth:renderMouth,sens:renderSens,kink:renderKink,mode:renderMode,lang:renderLang};
+  if(renders[tab]) renders[tab]();
 }
 
 // ══════════════════════════════════════════
@@ -900,11 +911,801 @@ function resetAge() {
   renderAge();
 }
 
-// ══════════════════════════════════════════
 // INIT
-// ══════════════════════════════════════════
 initDropdowns();
 renderBody();
+
+
+// ══════════════════════════════════════════
+// GENERIC TAB RENDERER
+// ══════════════════════════════════════════
+function makeTabHTML(tabId, title, filterKey, filterLabel) {
+  return `
+<div id="tab-${tabId}" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">${title}</div></div>
+      <div style="text-align:right"><div class="header-pct" id="${tabId}-pct">0%</div><div class="header-sub" id="${tabId}-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="${tabId}-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="${tabId}-search" placeholder="Search..." oninput="render${tabId.charAt(0).toUpperCase()+tabId.slice(1)}()">
+    <div class="filter-row">
+      <select class="filter-select" id="${tabId}-fg" onchange="render${tabId.charAt(0).toUpperCase()+tabId.slice(1)}()"><option value="">All ${filterLabel}</option></select>
+      <select class="filter-select" id="${tabId}-fact" onchange="render${tabId.charAt(0).toUpperCase()+tabId.slice(1)}()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="${tabId}-fst" onchange="render${tabId.charAt(0).toUpperCase()+tabId.slice(1)}()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="reset${tabId.charAt(0).toUpperCase()+tabId.slice(1)}()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="${tabId}-count"></div>
+  <div class="rules-list" id="${tabId}-list"></div>
+</div>`;
+}
+
+function renderGenericTab(cfg) {
+  const {tabId, rules, checked, key, groupKey, groupLabel, groupOrder, groupColors} = cfg;
+  const search = document.getElementById(tabId+'-search').value.toLowerCase();
+  const fg = document.getElementById(tabId+'-fg').value;
+  const fact = document.getElementById(tabId+'-fact').value;
+  const fst = document.getElementById(tabId+'-fst').value;
+
+  const filtered = rules.filter(r => {
+    if(fg && r[groupKey] !== fg) return false;
+    if(fact && r.action !== fact) return false;
+    if(fst==='done' && !checked[r.id]) return false;
+    if(fst==='todo' && checked[r.id]) return false;
+    if(search) return Object.values(r).some(v=>String(v).toLowerCase().includes(search));
+    return true;
+  });
+
+  const total = rules.length;
+  const done = rules.filter(r=>checked[r.id]).length;
+  const pct = Math.round((done/total)*100);
+  document.getElementById(tabId+'-pct').textContent = pct+'%';
+  document.getElementById(tabId+'-sub').textContent = done+' / '+total+' rules';
+  document.getElementById(tabId+'-bar').style.width = pct+'%';
+  document.getElementById(tabId+'-count').textContent = 'Showing '+filtered.length+' of '+total+' rules';
+
+  const groups = {};
+  filtered.forEach(r => { const k=r[groupKey]; if(!groups[k]) groups[k]=[]; groups[k].push(r); });
+
+  const list = document.getElementById(tabId+'-list');
+  list.innerHTML = '';
+  if(!Object.keys(groups).length) { list.innerHTML='<div class="empty-state">No rules match.</div>'; return; }
+
+  const order = groupOrder || Object.keys(groups);
+  order.filter(g=>groups[g]).forEach(g => {
+    const grules = groups[g];
+    const color = (groupColors && groupColors[g]) || '#b8920b';
+    const gdone = grules.filter(r=>checked[r.id]).length;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'group-header';
+    hdr.innerHTML = `<div class="group-bar" style="background:${color}"></div><div class="group-name">${g}</div><div class="group-count">${gdone}/${grules.length}</div>`;
+    list.appendChild(hdr);
+
+    grules.forEach(r => {
+      const done = !!checked[r.id];
+      const isBoost = r.action==='BOOST';
+      const item = document.createElement('div');
+      item.className = 'rule-item'+(done?' done':'');
+      item.onclick = () => { checked[r.id]=!checked[r.id]; saveChecked(key,checked); cfg.render(); };
+      item.innerHTML = `
+        <div class="checkbox ${done?'checked':''}"></div>
+        <div class="rule-body">
+          <div class="rule-badges">
+            <span class="badge badge-wheel">${r.wh}</span>
+            <span class="badge ${isBoost?'badge-boost':'badge-suppress'}">${isBoost?'▲ BOOST':'▼ SUPPRESS'}</span>
+            ${r.pct?`<span class="badge" style="background:#1a1a30;color:#8888cc">${r.pct}</span>`:''}
+          </div>
+          <div class="rule-segment ${done?'done':''}">${r.seg}</div>
+          ${r.trigger&&r.trigger!==r[groupKey]?`<div class="rule-note plain">Trigger: ${r.trigger} — ${r.group||''}</div>`:''}
+        </div>`;
+      list.appendChild(item);
+    });
+  });
+}
+
+function initGenericDropdown(tabId, rules, groupKey, groupLabel, groupOrder) {
+  const sel = document.getElementById(tabId+'-fg');
+  const groups = groupOrder || [...new Set(rules.map(r=>r[groupKey]))];
+  groups.forEach(g => { const o=document.createElement('option'); o.value=g; o.textContent=g; sel.appendChild(o); });
+}
+
+
+// ══════════════════════════════════════════
+// CUP SIZE DATA & RENDER
+// ══════════════════════════════════════════
+const CUP_RULES = [
+  {id:'cs-sm-bf-1',cup:'Small (A-B)',wh:'Breast Firmness',action:'BOOST',seg:'Rock solid, Very firm, Firm, Taut, Bouncy',pct:'40-60%'},
+  {id:'cs-sm-bf-2',cup:'Small (A-B)',wh:'Breast Firmness',action:'SUPPRESS',seg:'Saggy, Weighted, Floppy, Watery, Pillowy, Doughy',pct:'65-70%'},
+  {id:'cs-sm-ns-1',cup:'Small (A-B)',wh:'Nipple Size',action:'BOOST',seg:'very small thin, very small thick, small thin, small average, small puffy compact',pct:'35-50%'},
+  {id:'cs-sm-ns-2',cup:'Small (A-B)',wh:'Nipple Size',action:'SUPPRESS',seg:'large thick, very large thick, very large very wide, massive engorged, thumb-tip',pct:'60-85%'},
+  {id:'cs-sm-nt-1',cup:'Small (A-B)',wh:'Nipple Type',action:'BOOST',seg:'protruding always erect, slightly protruding semi-erect',pct:'35-45%'},
+  {id:'cs-sm-nt-2',cup:'Small (A-B)',wh:'Nipple Type',action:'SUPPRESS',seg:'deeply inverted fully pulled in',pct:'40%'},
+  {id:'cs-sm-np-1',cup:'Small (A-B)',wh:'Nipple Placement',action:'BOOST',seg:'Forward facing, Upward pointing, Sits high on breast, Centered on breast',pct:'35-50%'},
+  {id:'cs-sm-np-2',cup:'Small (A-B)',wh:'Nipple Placement',action:'SUPPRESS',seg:'At the fold, Below the fold, Downward pointing',pct:'60-75%'},
+  {id:'cs-sm-as-1',cup:'Small (A-B)',wh:'Areola Size',action:'BOOST',seg:'Tiny, Small',pct:'50-55%'},
+  {id:'cs-sm-as-2',cup:'Small (A-B)',wh:'Areola Size',action:'SUPPRESS',seg:'Very large, Enormous, Flat and wide',pct:'55-75%'},
+  {id:'cs-sm-be-1',cup:'Small (A-B)',wh:'Breast Enthusiasm',action:'BOOST',seg:'Mildly Enjoying Light, Neutral Acceptance',pct:'30-35%'},
+  {id:'cs-sm-be-2',cup:'Small (A-B)',wh:'Breast Enthusiasm',action:'SUPPRESS',seg:'Free-Use Gland Play, Arching Into Deep Massage, Begging For Nipple Core',pct:'40-45%'},
+  {id:'cs-sm-bp-1',cup:'Small (A-B)',wh:'Breast Psychology',action:'BOOST',seg:'Mild Curiosity, Neutral Emotional Void',pct:'30%'},
+  {id:'cs-sm-bp-2',cup:'Small (A-B)',wh:'Breast Psychology',action:'SUPPRESS',seg:'Euphoric Chest Ownership, Submissive Nipple Surrender',pct:'35%'},
+  {id:'cs-sm-cl-1',cup:'Small (A-B)',wh:'Cleavage',action:'BOOST',seg:'No natural cleavage, Slight cleavage',pct:'50-70%'},
+  {id:'cs-sm-cl-2',cup:'Small (A-B)',wh:'Cleavage',action:'SUPPRESS',seg:'Deep cleavage, Very deep cleavage, Side cleavage',pct:'55-85%'},
+  {id:'cs-av-bf-1',cup:'Average (C-DD)',wh:'Breast Firmness',action:'BOOST',seg:'Medium, Soft, Supple, Bouncy',pct:'35-45%'},
+  {id:'cs-av-bf-2',cup:'Average (C-DD)',wh:'Breast Firmness',action:'SUPPRESS',seg:'Rock solid, Watery, Floppy',pct:'30-40%'},
+  {id:'cs-av-ns-1',cup:'Average (C-DD)',wh:'Nipple Size',action:'BOOST',seg:'medium average, medium thick, small average',pct:'30-50%'},
+  {id:'cs-av-ns-2',cup:'Average (C-DD)',wh:'Nipple Size',action:'SUPPRESS',seg:'massive engorged, nonexistent, micro pinprick',pct:'50-60%'},
+  {id:'cs-av-np-1',cup:'Average (C-DD)',wh:'Nipple Placement',action:'BOOST',seg:'Forward facing, Centered on breast',pct:'40-45%'},
+  {id:'cs-av-np-2',cup:'Average (C-DD)',wh:'Nipple Placement',action:'SUPPRESS',seg:'At the fold, Below the fold, Extreme outer placement',pct:'40-55%'},
+  {id:'cs-av-as-1',cup:'Average (C-DD)',wh:'Areola Size',action:'BOOST',seg:'Average, Small',pct:'30-55%'},
+  {id:'cs-av-as-2',cup:'Average (C-DD)',wh:'Areola Size',action:'SUPPRESS',seg:'Enormous, Flat and wide',pct:'40-60%'},
+  {id:'cs-av-cl-1',cup:'Average (C-DD)',wh:'Cleavage',action:'BOOST',seg:'Moderate cleavage, Slight cleavage',pct:'35-50%'},
+  {id:'cs-av-cl-2',cup:'Average (C-DD)',wh:'Cleavage',action:'SUPPRESS',seg:'Very deep cleavage, No natural cleavage',pct:'40-45%'},
+  {id:'cs-lg-bf-1',cup:'Large (DDD-G)',wh:'Breast Firmness',action:'BOOST',seg:'Soft, Doughy, Jiggly, Weighted, Spongy',pct:'35-45%'},
+  {id:'cs-lg-bf-2',cup:'Large (DDD-G)',wh:'Breast Firmness',action:'SUPPRESS',seg:'Rock solid, Very firm, Taut, Silicone-like',pct:'35-65%'},
+  {id:'cs-lg-ns-1',cup:'Large (DDD-G)',wh:'Nipple Size',action:'BOOST',seg:'large thick, large average, medium thick',pct:'35-50%'},
+  {id:'cs-lg-ns-2',cup:'Large (DDD-G)',wh:'Nipple Size',action:'SUPPRESS',seg:'very small thin, very small thick, micro pinprick',pct:'55-65%'},
+  {id:'cs-lg-np-1',cup:'Large (DDD-G)',wh:'Nipple Placement',action:'BOOST',seg:'Outward pointing, Pulled outward, Widely spaced',pct:'35-40%'},
+  {id:'cs-lg-np-2',cup:'Large (DDD-G)',wh:'Nipple Placement',action:'SUPPRESS',seg:'Upward pointing, Sits high on breast, Closely spaced',pct:'45-50%'},
+  {id:'cs-lg-as-1',cup:'Large (DDD-G)',wh:'Areola Size',action:'BOOST',seg:'Large, Very large',pct:'45-50%'},
+  {id:'cs-lg-as-2',cup:'Large (DDD-G)',wh:'Areola Size',action:'SUPPRESS',seg:'Tiny, Small',pct:'50-65%'},
+  {id:'cs-lg-cl-1',cup:'Large (DDD-G)',wh:'Cleavage',action:'BOOST',seg:'Deep cleavage, Underboob crease visible, Cleavage with visible sweat or shine',pct:'40-55%'},
+  {id:'cs-lg-cl-2',cup:'Large (DDD-G)',wh:'Cleavage',action:'SUPPRESS',seg:'No natural cleavage, Slight cleavage',pct:'45-70%'},
+  {id:'cs-lg-be-1',cup:'Large (DDD-G)',wh:'Breast Enthusiasm',action:'BOOST',seg:'Passionately Responsive, Submissive Tissue Offering, Eagerly Guiding Pressure',pct:'30-35%'},
+  {id:'cs-lg-bp-1',cup:'Large (DDD-G)',wh:'Breast Psychology',action:'BOOST',seg:'Deep Emotional Bonding, Confident Breast Agency',pct:'30%'},
+  {id:'cs-vl-bf-1',cup:'Very Large (H+)',wh:'Breast Firmness',action:'BOOST',seg:'Weighted, Saggy, Floppy, Doughy, Watery, Pillowy',pct:'45-65%'},
+  {id:'cs-vl-bf-2',cup:'Very Large (H+)',wh:'Breast Firmness',action:'SUPPRESS',seg:'Rock solid, Very firm, Taut, Bouncy, Gummy',pct:'50-85%'},
+  {id:'cs-vl-ns-1',cup:'Very Large (H+)',wh:'Nipple Size',action:'BOOST',seg:'very large thick, very large very wide, massive engorged, thumb-tip',pct:'50-65%'},
+  {id:'cs-vl-ns-2',cup:'Very Large (H+)',wh:'Nipple Size',action:'SUPPRESS',seg:'very small thin, very small thick, micro pinprick',pct:'80-90%'},
+  {id:'cs-vl-nt-1',cup:'Very Large (H+)',wh:'Nipple Type',action:'BOOST',seg:'flat flush with areola, inverted slightly pulled in',pct:'35-40%'},
+  {id:'cs-vl-nt-2',cup:'Very Large (H+)',wh:'Nipple Type',action:'SUPPRESS',seg:'protruding always erect',pct:'35%'},
+  {id:'cs-vl-np-1',cup:'Very Large (H+)',wh:'Nipple Placement',action:'BOOST',seg:'Downward pointing, Sits low on breast, At the fold, Below the fold, Outward pointing',pct:'50-70%'},
+  {id:'cs-vl-np-2',cup:'Very Large (H+)',wh:'Nipple Placement',action:'SUPPRESS',seg:'Upward pointing, Sits high on breast, Closely spaced',pct:'60-80%'},
+  {id:'cs-vl-as-1',cup:'Very Large (H+)',wh:'Areola Size',action:'BOOST',seg:'Very large, Enormous, Flat and wide',pct:'55-70%'},
+  {id:'cs-vl-as-2',cup:'Very Large (H+)',wh:'Areola Size',action:'SUPPRESS',seg:'Tiny, Small',pct:'80-90%'},
+  {id:'cs-vl-cl-1',cup:'Very Large (H+)',wh:'Cleavage',action:'BOOST',seg:'Very deep cleavage, Deep cleavage, Underboob crease visible, Cleavage with visible sweat or shine, Freckled or marked cleavage',pct:'45-70%'},
+  {id:'cs-vl-cl-2',cup:'Very Large (H+)',wh:'Cleavage',action:'SUPPRESS',seg:'No natural cleavage',pct:'85%'},
+  {id:'cs-vl-be-1',cup:'Very Large (H+)',wh:'Breast Enthusiasm',action:'BOOST',seg:'Free-Use Gland Play, Arching Into Deep Massage, Passionately Responsive',pct:'35-40%'},
+  {id:'cs-vl-bp-1',cup:'Very Large (H+)',wh:'Breast Psychology',action:'BOOST',seg:'Euphoric Chest Ownership, Powerless Tissue Thrill, Deep Emotional Bonding',pct:'35%'},
+  {id:'cs-vl-bp-2',cup:'Very Large (H+)',wh:'Breast Psychology',action:'SUPPRESS',seg:'Strong Emotional Disgust, Trauma-Linked Panic',pct:'40%'},
+];
+const CUP_ORDER=['Small (A-B)','Average (C-DD)','Large (DDD-G)','Very Large (H+)'];
+const CUP_COLORS={'Small (A-B)':'#3498db','Average (C-DD)':'#2ecc71','Large (DDD-G)':'#f39c12','Very Large (H+)':'#e74c3c'};
+function renderCup(){renderGenericTab({tabId:'cup',rules:CUP_RULES,checked:cupChecked,key:CUP_KEY,groupKey:'cup',groupOrder:CUP_ORDER,groupColors:CUP_COLORS,render:renderCup});}
+function resetCup(){if(!confirm('Reset cup size rules?'))return;cupChecked={};saveChecked(CUP_KEY,{});renderCup();}
+
+
+// ══════════════════════════════════════════
+// ASS SIZE DATA & RENDER
+// ══════════════════════════════════════════
+const ASS_RULES = [
+  {id:'as-bt-ash-1',ass:'Barely There / Flat / Inverted',wh:'Ass Shape',action:'BOOST',seg:'Pancake, Runner, Narrow, Athletic, Petite round',pct:'50-70%'},
+  {id:'as-bt-ash-2',ass:'Barely There / Flat / Inverted',wh:'Ass Shape',action:'SUPPRESS',seg:'Cakes, Stacked, Disproportionate, Saddlebag, Clapping, Banana fold',pct:'75-90%'},
+  {id:'as-bt-apr-1',ass:'Barely There / Flat / Inverted',wh:'Ass Projection',action:'BOOST',seg:'Deep set, Tucked, Minimal projection, Wide rather than deep',pct:'55-70%'},
+  {id:'as-bt-apr-2',ass:'Barely There / Flat / Inverted',wh:'Ass Projection',action:'SUPPRESS',seg:'Brazilian, Mounted, Gravity defying, Shelf, Perky',pct:'65-90%'},
+  {id:'as-bt-atr-1',ass:'Barely There / Flat / Inverted',wh:'Ass Transition',action:'BOOST',seg:'Flat and continuous, Soft slope',pct:'50-60%'},
+  {id:'as-bt-atr-2',ass:'Barely There / Flat / Inverted',wh:'Ass Transition',action:'SUPPRESS',seg:'Dramatic shelf, Deep lumbar curve',pct:'50-75%'},
+  {id:'as-bt-ast-1',ass:'Barely There / Flat / Inverted',wh:'Ass Skin Texture',action:'BOOST',seg:'Smooth, Taut',pct:'50-55%'},
+  {id:'as-bt-ast-2',ass:'Barely There / Flat / Inverted',wh:'Ass Skin Texture',action:'SUPPRESS',seg:'Loose, Dimpled, Soft and pillowy',pct:'65-70%'},
+  {id:'as-bt-ti-1',ass:'Barely There / Flat / Inverted',wh:'Thigh Inner',action:'BOOST',seg:'Wide gap, Thigh gap',pct:'70-75%'},
+  {id:'as-bt-ti-2',ass:'Barely There / Flat / Inverted',wh:'Thigh Inner',action:'SUPPRESS',seg:'Full contact, Heavy overlap, Chafing visible',pct:'75-85%'},
+  {id:'as-bt-tt-1',ass:'Barely There / Flat / Inverted',wh:'Thigh Texture',action:'BOOST',seg:'Smooth, Firm and taut',pct:'50-55%'},
+  {id:'as-bt-tt-2',ass:'Barely There / Flat / Inverted',wh:'Thigh Texture',action:'SUPPRESS',seg:'Heavy cellulite, Soft and doughy, Loose skin',pct:'55-65%'},
+  {id:'as-sm-ash-1',ass:'Small',wh:'Ass Shape',action:'BOOST',seg:'Petite round, Narrow, Heart, Athletic, Double bubble',pct:'35-55%'},
+  {id:'as-sm-ash-2',ass:'Small',wh:'Ass Shape',action:'SUPPRESS',seg:'Cakes, Stacked, Disproportionate, Clapping, Banana fold',pct:'65-80%'},
+  {id:'as-sm-apr-1',ass:'Small',wh:'Ass Projection',action:'BOOST',seg:'Minimal projection, Moderate projection, High and tight',pct:'35-50%'},
+  {id:'as-sm-apr-2',ass:'Small',wh:'Ass Projection',action:'SUPPRESS',seg:'Brazilian, Mounted, Gravity defying, Shelf',pct:'55-75%'},
+  {id:'as-sm-ti-1',ass:'Small',wh:'Thigh Inner',action:'BOOST',seg:'Wide gap, Thigh gap, Touching at top only',pct:'35-60%'},
+  {id:'as-sm-ti-2',ass:'Small',wh:'Thigh Inner',action:'SUPPRESS',seg:'Full contact, Heavy overlap, Chafing visible',pct:'60-75%'},
+  {id:'as-sm-tt-1',ass:'Small',wh:'Thigh Texture',action:'BOOST',seg:'Smooth, Firm and taut',pct:'40-45%'},
+  {id:'as-sm-tt-2',ass:'Small',wh:'Thigh Texture',action:'SUPPRESS',seg:'Heavy cellulite, Soft and doughy',pct:'45-55%'},
+  {id:'as-av-ash-1',ass:'Average',wh:'Ass Shape',action:'SUPPRESS',seg:'Disproportionate, Cakes, Stacked, Banana fold',pct:'40-60%'},
+  {id:'as-av-apr-1',ass:'Average',wh:'Ass Projection',action:'BOOST',seg:'Moderate projection, High and tight',pct:'35-45%'},
+  {id:'as-av-apr-2',ass:'Average',wh:'Ass Projection',action:'SUPPRESS',seg:'Mounted, Gravity defying, Deep set',pct:'40-60%'},
+  {id:'as-av-ti-1',ass:'Average',wh:'Thigh Inner',action:'BOOST',seg:'Touching at top only, Touching top and mid',pct:'35-40%'},
+  {id:'as-av-ti-2',ass:'Average',wh:'Thigh Inner',action:'SUPPRESS',seg:'Heavy overlap, Wide gap',pct:'40-55%'},
+  {id:'as-fl-ash-1',ass:'Full',wh:'Ass Shape',action:'BOOST',seg:'Round, Bubble, Heart, Pear, Double bubble',pct:'35-45%'},
+  {id:'as-fl-ash-2',ass:'Full',wh:'Ass Shape',action:'SUPPRESS',seg:'Pancake, Runner, Narrow, Petite round',pct:'35-65%'},
+  {id:'as-fl-apr-1',ass:'Full',wh:'Ass Projection',action:'BOOST',seg:'Perky, Brazilian, Shelf, High and tight',pct:'35-45%'},
+  {id:'as-fl-apr-2',ass:'Full',wh:'Ass Projection',action:'SUPPRESS',seg:'Deep set, Tucked, Minimal projection',pct:'50-60%'},
+  {id:'as-fl-ti-1',ass:'Full',wh:'Thigh Inner',action:'BOOST',seg:'Touching top and mid, Full contact',pct:'40-45%'},
+  {id:'as-fl-ti-2',ass:'Full',wh:'Thigh Inner',action:'SUPPRESS',seg:'Wide gap, Thigh gap',pct:'55-60%'},
+  {id:'as-lg-ash-1',ass:'Large',wh:'Ass Shape',action:'BOOST',seg:'Cakes, Round, Bubble, Pear, Saddlebag, Outer thigh overlap',pct:'35-45%'},
+  {id:'as-lg-ash-2',ass:'Large',wh:'Ass Shape',action:'SUPPRESS',seg:'Pancake, Runner, Narrow, Petite round, Athletic',pct:'55-75%'},
+  {id:'as-lg-apr-1',ass:'Large',wh:'Ass Projection',action:'BOOST',seg:'Brazilian, Shelf, Perky, Booty shelf',pct:'45-50%'},
+  {id:'as-lg-apr-2',ass:'Large',wh:'Ass Projection',action:'SUPPRESS',seg:'Deep set, Tucked, Minimal projection',pct:'60-70%'},
+  {id:'as-lg-atr-1',ass:'Large',wh:'Ass Transition',action:'BOOST',seg:'Deep lumbar curve, Dramatic shelf, Dimpled transition',pct:'40-45%'},
+  {id:'as-lg-ast-1',ass:'Large',wh:'Ass Skin Texture',action:'BOOST',seg:'Dimpled, Soft and pillowy, Stretch marked',pct:'40-45%'},
+  {id:'as-lg-ti-1',ass:'Large',wh:'Thigh Inner',action:'BOOST',seg:'Full contact, Heavy overlap',pct:'40-50%'},
+  {id:'as-lg-ti-2',ass:'Large',wh:'Thigh Inner',action:'SUPPRESS',seg:'Wide gap, Thigh gap',pct:'65-70%'},
+  {id:'as-lg-tt-1',ass:'Large',wh:'Thigh Texture',action:'BOOST',seg:'Moderate cellulite, Heavy cellulite, Darkened inner thigh',pct:'40-45%'},
+  {id:'as-lg-tt-2',ass:'Large',wh:'Thigh Texture',action:'SUPPRESS',seg:'Smooth, Firm and taut',pct:'45-50%'},
+  {id:'as-hg-ash-1',ass:'Huge',wh:'Ass Shape',action:'BOOST',seg:'Cakes, Stacked, Disproportionate, Saddlebag, Outer thigh overlap, Clapping, Under-butt visible from front',pct:'45-60%'},
+  {id:'as-hg-ash-2',ass:'Huge',wh:'Ass Shape',action:'SUPPRESS',seg:'Pancake, Runner, Narrow, Petite round, Athletic',pct:'65-85%'},
+  {id:'as-hg-apr-1',ass:'Huge',wh:'Ass Projection',action:'BOOST',seg:'Brazilian, Shelf, Booty shelf, Mounted, Gravity defying',pct:'40-60%'},
+  {id:'as-hg-apr-2',ass:'Huge',wh:'Ass Projection',action:'SUPPRESS',seg:'Deep set, Tucked, Minimal projection',pct:'70-80%'},
+  {id:'as-hg-atr-1',ass:'Huge',wh:'Ass Transition',action:'BOOST',seg:'Dramatic shelf, Deep lumbar curve, Dimpled transition, Love handle merge',pct:'45-55%'},
+  {id:'as-hg-ast-1',ass:'Huge',wh:'Ass Skin Texture',action:'BOOST',seg:'Dimpled, Soft and pillowy, Stretch marked, Loose',pct:'45-60%'},
+  {id:'as-hg-ast-2',ass:'Huge',wh:'Ass Skin Texture',action:'SUPPRESS',seg:'Smooth, Taut',pct:'55-60%'},
+  {id:'as-hg-ti-1',ass:'Huge',wh:'Thigh Inner',action:'BOOST',seg:'Heavy overlap, Chafing visible, Full contact',pct:'55-60%'},
+  {id:'as-hg-ti-2',ass:'Huge',wh:'Thigh Inner',action:'SUPPRESS',seg:'Wide gap, Thigh gap',pct:'80-85%'},
+  {id:'as-hg-tt-1',ass:'Huge',wh:'Thigh Texture',action:'BOOST',seg:'Heavy cellulite, Moderate cellulite, Darkened inner thigh, Loose skin',pct:'45-55%'},
+  {id:'as-hg-tt-2',ass:'Huge',wh:'Thigh Texture',action:'SUPPRESS',seg:'Smooth, Firm and taut',pct:'60%'},
+  {id:'as-ob-ash-1',ass:'Obscene',wh:'Ass Shape',action:'BOOST',seg:'Cakes, Stacked, Disproportionate, Clapping, Banana fold, Under-butt visible from front, Outer thigh overlap, Love handle merge',pct:'55-75%'},
+  {id:'as-ob-ash-2',ass:'Obscene',wh:'Ass Shape',action:'SUPPRESS',seg:'Pancake, Runner, Narrow, Petite round, Athletic',pct:'80-90%'},
+  {id:'as-ob-apr-1',ass:'Obscene',wh:'Ass Projection',action:'BOOST',seg:'Mounted, Gravity defying, Shelf, Brazilian, Booty shelf',pct:'55-65%'},
+  {id:'as-ob-apr-2',ass:'Obscene',wh:'Ass Projection',action:'SUPPRESS',seg:'Deep set, Tucked, Minimal projection, Wide rather than deep',pct:'80-90%'},
+  {id:'as-ob-atr-1',ass:'Obscene',wh:'Ass Transition',action:'BOOST',seg:'Dramatic shelf, Love handle merge, Dimpled transition',pct:'55-65%'},
+  {id:'as-ob-atr-2',ass:'Obscene',wh:'Ass Transition',action:'SUPPRESS',seg:'Flat and continuous, Soft slope',pct:'55-80%'},
+  {id:'as-ob-ast-1',ass:'Obscene',wh:'Ass Skin Texture',action:'BOOST',seg:'Dimpled, Soft and pillowy, Stretch marked, Loose',pct:'60-70%'},
+  {id:'as-ob-ast-2',ass:'Obscene',wh:'Ass Skin Texture',action:'SUPPRESS',seg:'Smooth, Taut',pct:'70-75%'},
+  {id:'as-ob-ti-1',ass:'Obscene',wh:'Thigh Inner',action:'BOOST',seg:'Heavy overlap, Chafing visible, Full contact',pct:'65-75%'},
+  {id:'as-ob-ti-2',ass:'Obscene',wh:'Thigh Inner',action:'SUPPRESS',seg:'Wide gap, Thigh gap',pct:'90-95%'},
+  {id:'as-ob-tt-1',ass:'Obscene',wh:'Thigh Texture',action:'BOOST',seg:'Heavy cellulite, Darkened inner thigh, Loose skin, Soft and doughy',pct:'55-65%'},
+  {id:'as-ob-tt-2',ass:'Obscene',wh:'Thigh Texture',action:'SUPPRESS',seg:'Smooth, Firm and taut',pct:'70-75%'},
+];
+const ASS_ORDER=['Barely There / Flat / Inverted','Small','Average','Full','Large','Huge','Obscene'];
+const ASS_COLORS={'Barely There / Flat / Inverted':'#3498db','Small':'#2ecc71','Average':'#27ae60','Full':'#f39c12','Large':'#e67e22','Huge':'#e74c3c','Obscene':'#c0392b'};
+function renderAss(){renderGenericTab({tabId:'ass',rules:ASS_RULES,checked:assChecked,key:ASS_KEY,groupKey:'ass',groupOrder:ASS_ORDER,groupColors:ASS_COLORS,render:renderAss});}
+function resetAss(){if(!confirm('Reset ass size rules?'))return;assChecked={};saveChecked(ASS_KEY,{});renderAss();}
+
+
+// ══════════════════════════════════════════
+// MOUTH PROFILE DATA & RENDER
+// ══════════════════════════════════════════
+const MOUTH_RULES = [
+  {id:'mp-th-oe-1',lip:'Thin Lips',wh:'Oral Enthusiasm',action:'BOOST',seg:'Mildly Interested Sucking, Neutral Mechanical Use, Reluctant Shallow Only',pct:'35-40%'},
+  {id:'mp-th-oe-2',lip:'Thin Lips',wh:'Oral Enthusiasm',action:'SUPPRESS',seg:'Free-Use Throat Offer, Obsessed Deep Swallower, Eager Full-Length Devourer, Needy Saliva Bath',pct:'50-60%'},
+  {id:'mp-th-op-1',lip:'Thin Lips',wh:'Oral Psychology',action:'BOOST',seg:'Hesitant Self-Doubt, Neutral Emotional Void, Anxious Performance Fear',pct:'35%'},
+  {id:'mp-th-op-2',lip:'Thin Lips',wh:'Oral Psychology',action:'SUPPRESS',seg:'Euphoric Service High, Submissive Devotion, Powerless Thrill',pct:'50-55%'},
+  {id:'mp-th-oa-1',lip:'Thin Lips',wh:'Oral Anatomy',action:'BOOST',seg:'Short Broad Tongue, Strong Gag Reflex, Narrow Esophageal Tube, Thin Tight Cheeks, High Tongue Anchor',pct:'40-45%'},
+  {id:'mp-th-oa-2',lip:'Thin Lips',wh:'Oral Anatomy',action:'SUPPRESS',seg:'Long Flexible Tongue, Wide Flat Tongue, Elastic Buccal Mucosa, Low Tongue Anchor',pct:'40-50%'},
+  {id:'mp-th-od-1',lip:'Thin Lips',wh:'Oral Depth',action:'BOOST',seg:'2-Inch Tongue-Only, 3-Inch Soft Palate, 4-Inch Gag Threshold, Dry Gag Lock, Painful 3-Inch Max',pct:'40-50%'},
+  {id:'mp-th-od-2',lip:'Thin Lips',wh:'Oral Depth',action:'SUPPRESS',seg:'7-Inch Maximum Gullet, 7.5-Inch Forced, Free-Use 7-Inch Open, Flooded Loose 7-Inch',pct:'60-75%'},
+  {id:'mp-av-oe-1',lip:'Average Lips',wh:'Oral Enthusiasm',action:'SUPPRESS',seg:'Completely Unwilling, Obsessed Deep Swallower',pct:'25-30%'},
+  {id:'mp-av-od-1',lip:'Average Lips',wh:'Oral Depth',action:'BOOST',seg:'4.5-Inch Controlled, 5-Inch Throat Hug, Variable 3-6 Inch',pct:'35-40%'},
+  {id:'mp-av-od-2',lip:'Average Lips',wh:'Oral Depth',action:'SUPPRESS',seg:'7.5-Inch Forced, Painful 3-Inch Max',pct:'30-40%'},
+  {id:'mp-fl-oe-1',lip:'Full Lips',wh:'Oral Enthusiasm',action:'BOOST',seg:'Passionately Worshiping, Submissive Oral Servant, Enthusiastic Gag-Taker, Eager Full-Length Devourer',pct:'35-45%'},
+  {id:'mp-fl-oe-2',lip:'Full Lips',wh:'Oral Enthusiasm',action:'SUPPRESS',seg:'Completely Unwilling, Limp Unresponsive, Reluctant Shallow Only',pct:'40-45%'},
+  {id:'mp-fl-op-1',lip:'Full Lips',wh:'Oral Psychology',action:'BOOST',seg:'Submissive Devotion, Euphoric Service High, Deep Emotional Bonding',pct:'35-40%'},
+  {id:'mp-fl-op-2',lip:'Full Lips',wh:'Oral Psychology',action:'SUPPRESS',seg:'Complete Psychological Refusal, Strong Emotional Disgust, Active Mental Avoidance',pct:'40-50%'},
+  {id:'mp-fl-oa-1',lip:'Full Lips',wh:'Oral Anatomy',action:'BOOST',seg:'Wide Flat Tongue, Thick Muscular Tongue, Plump Cushioned Cheeks, Elastic Buccal Mucosa, Low Tongue Anchor',pct:'40-45%'},
+  {id:'mp-fl-oa-2',lip:'Full Lips',wh:'Oral Anatomy',action:'SUPPRESS',seg:'Short Broad Tongue, Thin Tight Cheeks, High Tongue Anchor',pct:'35-40%'},
+  {id:'mp-fl-od-1',lip:'Full Lips',wh:'Oral Depth',action:'BOOST',seg:'5.5-Inch Swallow Depth, 6-Inch Deep Throat, Variable 3-6 Inch',pct:'40-45%'},
+  {id:'mp-fl-od-2',lip:'Full Lips',wh:'Oral Depth',action:'SUPPRESS',seg:'2-Inch Tongue-Only, Dry Gag Lock, Painful 3-Inch Max',pct:'45-55%'},
+  {id:'mp-dsl-oe-1',lip:'Huge Lips (DSL)',wh:'Oral Enthusiasm',action:'BOOST',seg:'Free-Use Throat Offer, Obsessed Deep Swallower, Eager Full-Length Devourer, Needy Saliva Bath, Enthusiastic Gag-Taker',pct:'50-60%'},
+  {id:'mp-dsl-oe-2',lip:'Huge Lips (DSL)',wh:'Oral Enthusiasm',action:'SUPPRESS',seg:'Completely Unwilling, Limp Unresponsive, Emotionally Detached, Reluctant Shallow Only',pct:'55-65%'},
+  {id:'mp-dsl-op-1',lip:'Huge Lips (DSL)',wh:'Oral Psychology',action:'BOOST',seg:'Euphoric Service High, Submissive Devotion, Powerless Thrill, Guilty Secret Craving',pct:'45-55%'},
+  {id:'mp-dsl-op-2',lip:'Huge Lips (DSL)',wh:'Oral Psychology',action:'SUPPRESS',seg:'Complete Psychological Refusal, Strong Emotional Disgust, Fear-Based Shutdown',pct:'55-65%'},
+  {id:'mp-dsl-oa-1',lip:'Huge Lips (DSL)',wh:'Oral Anatomy',action:'BOOST',seg:'Wide Flat Tongue, Thick Muscular Tongue, Plump Cushioned Cheeks, Elastic Buccal Mucosa, Low Tongue Anchor, Weak Gag Reflex, Wide Esophageal Opening',pct:'45-55%'},
+  {id:'mp-dsl-oa-2',lip:'Huge Lips (DSL)',wh:'Oral Anatomy',action:'SUPPRESS',seg:'Short Broad Tongue, Thin Tight Cheeks, Strong Gag Reflex, Narrow Esophageal Tube',pct:'45-55%'},
+  {id:'mp-dsl-od-1',lip:'Huge Lips (DSL)',wh:'Oral Depth',action:'BOOST',seg:'6-Inch Deep Throat, 6.5-Inch Full Swallow, 7-Inch Maximum Gullet, Free-Use 7-Inch Open, Flooded Loose 7-Inch',pct:'50-60%'},
+  {id:'mp-dsl-od-2',lip:'Huge Lips (DSL)',wh:'Oral Depth',action:'SUPPRESS',seg:'2-Inch Tongue-Only, 3-Inch Soft Palate, Dry Gag Lock, Painful 3-Inch Max',pct:'60-70%'},
+];
+const MOUTH_ORDER=['Thin Lips','Average Lips','Full Lips','Huge Lips (DSL)'];
+const MOUTH_COLORS={'Thin Lips':'#3498db','Average Lips':'#2ecc71','Full Lips':'#f39c12','Huge Lips (DSL)':'#e74c3c'};
+function renderMouth(){renderGenericTab({tabId:'mouth',rules:MOUTH_RULES,checked:mouthChecked,key:MOUTH_KEY,groupKey:'lip',groupOrder:MOUTH_ORDER,groupColors:MOUTH_COLORS,render:renderMouth});}
+function resetMouth(){if(!confirm('Reset mouth profile rules?'))return;mouthChecked={};saveChecked(MOUTH_KEY,{});renderMouth();}
+
+// ══════════════════════════════════════════
+// SENSATION DATA & RENDER
+// ══════════════════════════════════════════
+const SENS_RULES = [
+  {id:'sn-br-sf-1',region:'Breast',trigger:'Cup Size = A or B',wh:'Breast Sensation (Her Gland)',action:'BOOST',seg:'Delicate Nerve Overload, Diffuse Chest Satisfaction',pct:'40-45%'},
+  {id:'sn-br-sf-2',region:'Breast',trigger:'Cup Size = A or B',wh:'Breast Sensation (Her Gland)',action:'SUPPRESS',seg:'Heavy Pendulous Pull Ecstasy, Rhythmic Compression Peaks',pct:'45-70%'},
+  {id:'sn-br-sf-3',region:'Breast',trigger:'Cup Size = H+',wh:'Breast Sensation (Her Gland)',action:'BOOST',seg:'Heavy Pendulous Pull Ecstasy, Rhythmic Compression Peaks, Firm Grip Satisfaction',pct:'50-60%'},
+  {id:'sn-br-sf-4',region:'Breast',trigger:'Cup Size = H+',wh:'Breast Sensation (Her Gland)',action:'SUPPRESS',seg:'Delicate Nerve Overload, Complete Glandular Numbness',pct:'40-50%'},
+  {id:'sn-br-sf-5',region:'Breast',trigger:'Breast Firmness = Rock solid / Very firm',wh:'Breast Sensation (Her Gland)',action:'BOOST',seg:'Delicate Nerve Overload, Firm Grip Satisfaction',pct:'50-55%'},
+  {id:'sn-br-sf-6',region:'Breast',trigger:'Breast Firmness = Rock solid / Very firm',wh:'Breast Sensation (Her Gland)',action:'SUPPRESS',seg:'Heavy Pendulous Pull Ecstasy, Under-Fold Soothing',pct:'55-65%'},
+  {id:'sn-br-sf-7',region:'Breast',trigger:'Breast Firmness = Saggy / Floppy / Watery',wh:'Breast Sensation (Her Gland)',action:'BOOST',seg:'Heavy Pendulous Pull Ecstasy, Under-Fold Soothing, Numbing Tissue Ache',pct:'40-55%'},
+  {id:'sn-br-sf-8',region:'Breast',trigger:'Breast Firmness = Saggy / Floppy / Watery',wh:'Breast Sensation (Her Gland)',action:'SUPPRESS',seg:'Firm Grip Satisfaction, Delicate Nerve Overload',pct:'45-55%'},
+  {id:'sn-br-sn-1',region:'Breast',trigger:'Breast Firmness = Rock solid / Very firm',wh:'Breast Sensation (Her Nipple)',action:'BOOST',seg:'Nipple Electric Zing, Sharp Nerve Sparks, Hypersensitive Core Throb',pct:'45-50%'},
+  {id:'sn-br-sn-2',region:'Breast',trigger:'Breast Firmness = Rock solid / Very firm',wh:'Breast Sensation (Her Nipple)',action:'SUPPRESS',seg:'Numbing Nerve Ache, Complete Nipple Revulsion',pct:'55-60%'},
+  {id:'sn-br-sn-3',region:'Breast',trigger:'Breast Firmness = Saggy / Floppy / Watery',wh:'Breast Sensation (Her Nipple)',action:'BOOST',seg:'Numbing Nerve Ache, Gentle Nerve Tingling, Complete Nipple Revulsion',pct:'35-45%'},
+  {id:'sn-br-sn-4',region:'Breast',trigger:'Breast Firmness = Saggy / Floppy / Watery',wh:'Breast Sensation (Her Nipple)',action:'SUPPRESS',seg:'Nipple Electric Zing, Sharp Nerve Sparks, Hypersensitive Core Throb',pct:'50-55%'},
+  {id:'sn-or-sh-1',region:'Oral',trigger:'Oral Anatomy = Strong Gag / Narrow Esophageal',wh:'Oral Sensation (Her)',action:'BOOST',seg:'Gag-Edge Thrill, Jaw Strain Pain, Muscle Cramp Agony',pct:'40-50%'},
+  {id:'sn-or-sh-2',region:'Oral',trigger:'Oral Anatomy = Strong Gag / Narrow Esophageal',wh:'Oral Sensation (Her)',action:'SUPPRESS',seg:'Throat Fullness Ecstasy, Esophageal Pressure Bliss, Breathing-Restricted High',pct:'45-55%'},
+  {id:'sn-or-sh-3',region:'Oral',trigger:'Oral Anatomy = Weak Gag / Wide Esophageal / Elastic',wh:'Oral Sensation (Her)',action:'BOOST',seg:'Throat Fullness Ecstasy, Esophageal Pressure Bliss, Swallowing Rhythm Orgasms',pct:'50-55%'},
+  {id:'sn-or-sh-4',region:'Oral',trigger:'Oral Anatomy = Weak Gag / Wide Esophageal / Elastic',wh:'Oral Sensation (Her)',action:'SUPPRESS',seg:'Gag-Edge Thrill, Jaw Strain Pain, Muscle Cramp Agony, Numbing Gag Nausea',pct:'40-60%'},
+  {id:'sn-or-sh-5',region:'Oral',trigger:'Oral Depth = 2-Inch / 3-Inch / Dry Gag Lock',wh:'Oral Sensation (Her)',action:'BOOST',seg:'Gentle Mouth Fullness, Jaw Strain Pain',pct:'40-50%'},
+  {id:'sn-or-sh-6',region:'Oral',trigger:'Oral Depth = 2-Inch / 3-Inch / Dry Gag Lock',wh:'Oral Sensation (Her)',action:'SUPPRESS',seg:'Throat Fullness Ecstasy, Esophageal Pressure Bliss, Breathing-Restricted High',pct:'65-70%'},
+  {id:'sn-or-sh-7',region:'Oral',trigger:'Oral Depth = 6-Inch+ / Free-Use / Flooded',wh:'Oral Sensation (Her)',action:'BOOST',seg:'Throat Fullness Ecstasy, Esophageal Pressure Bliss, Swallowing Rhythm Orgasms, Breathing-Restricted High',pct:'50-60%'},
+  {id:'sn-or-sh-8',region:'Oral',trigger:'Oral Depth = 6-Inch+ / Free-Use / Flooded',wh:'Oral Sensation (Her)',action:'SUPPRESS',seg:'Gentle Mouth Fullness, Complete Oral Revulsion, Numbing Gag Nausea',pct:'55-60%'},
+  {id:'sn-or-sm-1',region:'Oral',trigger:'Oral Anatomy = Narrow Esophageal / Tight Cheeks',wh:'Oral Sensation (Me)',action:'BOOST',seg:'Tight Gag Constriction, Strong Vacuum Suction, Firm Lip-to-Throat Seal',pct:'45-55%'},
+  {id:'sn-or-sm-2',region:'Oral',trigger:'Oral Anatomy = Narrow Esophageal / Tight Cheeks',wh:'Oral Sensation (Me)',action:'SUPPRESS',seg:'Loose Slack Throat, Slippery Saliva Bath',pct:'40-65%'},
+  {id:'sn-or-sm-3',region:'Oral',trigger:'Oral Anatomy = Wide Esophageal / Plump Cheeks',wh:'Oral Sensation (Me)',action:'BOOST',seg:'Warm Throat Milking, Deep Esophageal Hug, Hot Interior Fullness',pct:'50-55%'},
+  {id:'sn-or-sm-4',region:'Oral',trigger:'Oral Anatomy = Wide Esophageal / Plump Cheeks',wh:'Oral Sensation (Me)',action:'SUPPRESS',seg:'Tooth-Edge Scrape, Tight Gag Constriction',pct:'40-60%'},
+  {id:'sn-or-sm-5',region:'Oral',trigger:'Oral Depth = 2-Inch / 3-Inch',wh:'Oral Sensation (Me)',action:'BOOST',seg:'Shallow Tongue-Only',pct:'65%'},
+  {id:'sn-or-sm-6',region:'Oral',trigger:'Oral Depth = 2-Inch / 3-Inch',wh:'Oral Sensation (Me)',action:'SUPPRESS',seg:'Deep Esophageal Hug, Warm Throat Milking, Deep Throat Bottom-Out',pct:'65-75%'},
+  {id:'sn-or-sm-7',region:'Oral',trigger:'Oral Depth = 6-Inch+',wh:'Oral Sensation (Me)',action:'BOOST',seg:'Deep Esophageal Hug, Warm Throat Milking, Deep Throat Bottom-Out, Rhythmic Swallow Pulses',pct:'50-60%'},
+  {id:'sn-or-sm-8',region:'Oral',trigger:'Oral Depth = 6-Inch+',wh:'Oral Sensation (Me)',action:'SUPPRESS',seg:'Shallow Tongue-Only, Tooth-Edge Scrape',pct:'55-75%'},
+  {id:'sn-vg-sh-1',region:'Vaginal',trigger:'Vaginal Anatomy = tight / gripping',wh:'Vaginal Sensation (Her)',action:'BOOST',seg:'G-Spot Wall Friction, Rugae-Stretching Bliss, Intense Over-Stretch Pain',pct:'40-50%'},
+  {id:'sn-vg-sh-2',region:'Vaginal',trigger:'Vaginal Anatomy = tight / gripping',wh:'Vaginal Sensation (Her)',action:'SUPPRESS',seg:'Complete Internal Numbness, Surface Tingling Dislike',pct:'50-60%'},
+  {id:'sn-vg-sh-3',region:'Vaginal',trigger:'Vaginal Anatomy = loose / spacious',wh:'Vaginal Sensation (Her)',action:'BOOST',seg:'Deep Fullness Ecstasy, Soothing Deep Massage, Complete Internal Numbness',pct:'40-50%'},
+  {id:'sn-vg-sh-4',region:'Vaginal',trigger:'Vaginal Anatomy = loose / spacious',wh:'Vaginal Sensation (Her)',action:'SUPPRESS',seg:'Intense Over-Stretch Pain, Rugae-Stretching Bliss',pct:'45-55%'},
+  {id:'sn-vg-sh-5',region:'Vaginal',trigger:'Vaginal Depth = shallow',wh:'Vaginal Sensation (Her)',action:'BOOST',seg:'G-Spot Wall Friction, Surface Tingling Dislike',pct:'45-55%'},
+  {id:'sn-vg-sh-6',region:'Vaginal',trigger:'Vaginal Depth = shallow',wh:'Vaginal Sensation (Her)',action:'SUPPRESS',seg:'Cervical Nudge Pleasure, Deep Fullness Ecstasy, Pulsing Fornix Fire',pct:'65-70%'},
+  {id:'sn-vg-sh-7',region:'Vaginal',trigger:'Vaginal Depth = deep',wh:'Vaginal Sensation (Her)',action:'BOOST',seg:'Cervical Nudge Pleasure, Deep Fullness Ecstasy, Pulsing Fornix Fire',pct:'50-55%'},
+  {id:'sn-vg-sh-8',region:'Vaginal',trigger:'Vaginal Depth = deep',wh:'Vaginal Sensation (Her)',action:'SUPPRESS',seg:'Surface Tingling Dislike, G-Spot Wall Friction',pct:'35-60%'},
+  {id:'sn-vg-sm-1',region:'Vaginal',trigger:'Vaginal Anatomy = tight',wh:'Vaginal Sensation (Me)',action:'BOOST',seg:'Tight Muscular Ring, Sticky Mid-Canal Tug, Variable Muscle Clamp',pct:'50-60%'},
+  {id:'sn-vg-sm-2',region:'Vaginal',trigger:'Vaginal Anatomy = tight',wh:'Vaginal Sensation (Me)',action:'SUPPRESS',seg:'Loose Wide Canal, Numbing Loose Sack',pct:'70%'},
+  {id:'sn-vg-sm-3',region:'Vaginal',trigger:'Vaginal Anatomy = loose',wh:'Vaginal Sensation (Me)',action:'BOOST',seg:'Loose Wide Canal, Numbing Loose Sack',pct:'50-55%'},
+  {id:'sn-vg-sm-4',region:'Vaginal',trigger:'Vaginal Anatomy = loose',wh:'Vaginal Sensation (Me)',action:'SUPPRESS',seg:'Tight Muscular Ring',pct:'65%'},
+  {id:'sn-an-sh-1',region:'Anal',trigger:'Anal Anatomy = tight',wh:'Anal Sensation (Her)',action:'BOOST',seg:'Sphincter Stretch Bliss, Intense Ring Burn',pct:'45-50%'},
+  {id:'sn-an-sh-2',region:'Anal',trigger:'Anal Anatomy = tight',wh:'Anal Sensation (Her)',action:'SUPPRESS',seg:'Complete Anal Revulsion, Numbing Dead Feel',pct:'40-50%'},
+  {id:'sn-an-sh-3',region:'Anal',trigger:'Anal Anatomy = loose / trained',wh:'Anal Sensation (Her)',action:'BOOST',seg:'Rectal Fullness Ecstasy, Ampulla Pressure Glow, Satisfying Rectal Grip',pct:'45-55%'},
+  {id:'sn-an-sh-4',region:'Anal',trigger:'Anal Anatomy = loose / trained',wh:'Anal Sensation (Her)',action:'SUPPRESS',seg:'Intense Ring Burn, Tearing Stretch',pct:'55-65%'},
+  {id:'sn-an-sh-5',region:'Anal',trigger:'Anal Depth = shallow',wh:'Anal Sensation (Her)',action:'BOOST',seg:'Mild Internal Pressure, Sphincter Stretch Bliss',pct:'45-55%'},
+  {id:'sn-an-sh-6',region:'Anal',trigger:'Anal Depth = shallow',wh:'Anal Sensation (Her)',action:'SUPPRESS',seg:'Rectal Fullness Ecstasy, Curve-Reaching Thrill, Warm Rectal Waves',pct:'60-70%'},
+  {id:'sn-an-sh-7',region:'Anal',trigger:'Anal Depth = deep',wh:'Anal Sensation (Her)',action:'BOOST',seg:'Rectal Fullness Ecstasy, Curve-Reaching Thrill, Warm Rectal Waves',pct:'55-60%'},
+  {id:'sn-an-sh-8',region:'Anal',trigger:'Anal Depth = deep',wh:'Anal Sensation (Her)',action:'SUPPRESS',seg:'Mild Internal Pressure, Complete Anal Revulsion',pct:'50-55%'},
+  {id:'sn-an-sm-1',region:'Anal',trigger:'Anal Anatomy = tight',wh:'Anal Sensation (Me)',action:'BOOST',seg:'Vice Sphincter Grip, Rhythmic Milking, Powerful Curve Squeeze',pct:'50-60%'},
+  {id:'sn-an-sm-2',region:'Anal',trigger:'Anal Anatomy = tight',wh:'Anal Sensation (Me)',action:'SUPPRESS',seg:'Loose Wide Rectum, Smooth Deep Slide',pct:'45-70%'},
+  {id:'sn-an-sm-3',region:'Anal',trigger:'Anal Anatomy = loose',wh:'Anal Sensation (Me)',action:'BOOST',seg:'Smooth Deep Slide, Hot Ampulla Bath',pct:'50%'},
+  {id:'sn-an-sm-4',region:'Anal',trigger:'Anal Anatomy = loose',wh:'Anal Sensation (Me)',action:'SUPPRESS',seg:'Vice Sphincter Grip, Crushing Sphincter',pct:'60-65%'},
+];
+const SENS_ORDER=['Breast','Oral','Vaginal','Anal'];
+const SENS_COLORS={'Breast':'#e74c3c','Oral':'#f39c12','Vaginal':'#9b59b6','Anal':'#3498db'};
+function renderSens(){
+  const tabId='sens';
+  const search=document.getElementById(tabId+'-search').value.toLowerCase();
+  const fg=document.getElementById(tabId+'-fg').value;
+  const fact=document.getElementById(tabId+'-fact').value;
+  const fst=document.getElementById(tabId+'-fst').value;
+  const filtered=SENS_RULES.filter(r=>{
+    if(fg&&r.region!==fg)return false;
+    if(fact&&r.action!==fact)return false;
+    if(fst==='done'&&!sensChecked[r.id])return false;
+    if(fst==='todo'&&sensChecked[r.id])return false;
+    if(search)return Object.values(r).some(v=>String(v).toLowerCase().includes(search));
+    return true;
+  });
+  const total=SENS_RULES.length,done=SENS_RULES.filter(r=>sensChecked[r.id]).length,pct=Math.round((done/total)*100);
+  document.getElementById('sens-pct').textContent=pct+'%';
+  document.getElementById('sens-sub').textContent=done+' / '+total+' rules';
+  document.getElementById('sens-bar').style.width=pct+'%';
+  document.getElementById('sens-count').textContent='Showing '+filtered.length+' of '+total+' rules';
+  const groups={};
+  filtered.forEach(r=>{if(!groups[r.region])groups[r.region]=[];groups[r.region].push(r);});
+  const list=document.getElementById('sens-list');
+  list.innerHTML='';
+  if(!Object.keys(groups).length){list.innerHTML='<div class="empty-state">No rules match.</div>';return;}
+  SENS_ORDER.filter(g=>groups[g]).forEach(g=>{
+    const grules=groups[g],color=SENS_COLORS[g],gdone=grules.filter(r=>sensChecked[r.id]).length;
+    const hdr=document.createElement('div');
+    hdr.className='group-header';
+    hdr.innerHTML=`<div class="group-bar" style="background:${color}"></div><div class="group-name">${g}</div><div class="group-count">${gdone}/${grules.length}</div>`;
+    list.appendChild(hdr);
+    grules.forEach(r=>{
+      const done=!!sensChecked[r.id],isBoost=r.action==='BOOST';
+      const item=document.createElement('div');
+      item.className='rule-item'+(done?' done':'');
+      item.onclick=()=>{sensChecked[r.id]=!sensChecked[r.id];saveChecked(SENS_KEY,sensChecked);renderSens();};
+      item.innerHTML=`
+        <div class="checkbox ${done?'checked':''}"></div>
+        <div class="rule-body">
+          <div class="rule-badges">
+            <span class="badge badge-wheel">${r.wh}</span>
+            <span class="badge ${isBoost?'badge-boost':'badge-suppress'}">${isBoost?'▲ BOOST':'▼ SUPPRESS'}</span>
+            ${r.pct?`<span class="badge" style="background:#1a1a30;color:#8888cc">${r.pct}</span>`:''}
+          </div>
+          <div class="rule-note plain" style="margin-bottom:3px">Trigger: ${r.trigger}</div>
+          <div class="rule-segment ${done?'done':''}">${r.seg}</div>
+        </div>`;
+      list.appendChild(item);
+    });
+  });
+}
+function resetSens(){if(!confirm('Reset sensation rules?'))return;sensChecked={};saveChecked(SENS_KEY,{});renderSens();}
+
+
+// ══════════════════════════════════════════
+// KINK DATA & RENDER
+// ══════════════════════════════════════════
+const KINK_RULES = [
+  {id:'ki-sd-1',kink:'Super Dom',wh:'Mode',action:'BOOST',seg:'Wife, Superior, Teacher',pct:'35-60%'},
+  {id:'ki-sd-2',kink:'Super Dom',wh:'Mode',action:'SUPPRESS',seg:'Pet, Slave, Groomed Protégé, Sub',pct:'60-75%'},
+  {id:'ki-md-1',kink:'Med Dom',wh:'Mode',action:'BOOST',seg:'Wife, Superior, Older Sister, Teacher',pct:'40-50%'},
+  {id:'ki-md-2',kink:'Med Dom',wh:'Mode',action:'SUPPRESS',seg:'Pet, Slave, Groomed Protégé',pct:'55-65%'},
+  {id:'ki-ld-1',kink:'Light Dom',wh:'Mode',action:'BOOST',seg:'Wife, Lover, FWB, Superior',pct:'35-45%'},
+  {id:'ki-ld-2',kink:'Light Dom',wh:'Mode',action:'SUPPRESS',seg:'Pet, Slave, Groomed Protégé',pct:'45-50%'},
+  {id:'ki-gd-1',kink:'Gentle Dom',wh:'Mode',action:'BOOST',seg:'Wife, Lover, FWB, Older Sister',pct:'35-45%'},
+  {id:'ki-gd-2',kink:'Gentle Dom',wh:'Mode',action:'SUPPRESS',seg:'Slave, Groomed Protégé',pct:'35-40%'},
+  {id:'ki-no-1',kink:'Normal',wh:'Mode',action:'BOOST',seg:'Wife, Lover, FWB, Older Sister, Aunt',pct:'35-45%'},
+  {id:'ki-gs-1',kink:'Gentle Sub',wh:'Mode',action:'BOOST',seg:'Sub, Pet, FWB, Lover',pct:'35-45%'},
+  {id:'ki-gs-2',kink:'Gentle Sub',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher',pct:'40-45%'},
+  {id:'ki-ls-1',kink:'Light Sub',wh:'Mode',action:'BOOST',seg:'Sub, Pet, Slave',pct:'35-55%'},
+  {id:'ki-ls-2',kink:'Light Sub',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Wife',pct:'35-55%'},
+  {id:'ki-ms-1',kink:'Med Sub',wh:'Mode',action:'BOOST',seg:'Sub, Slave, Pet, Groomed Protégé',pct:'45-60%'},
+  {id:'ki-ms-2',kink:'Med Sub',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Wife',pct:'50-65%'},
+  {id:'ki-ss-1',kink:'Super Sub',wh:'Mode',action:'BOOST',seg:'Slave, Pet, Groomed Protégé, Sub',pct:'60-70%'},
+  {id:'ki-ss-2',kink:'Super Sub',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Wife, Older Sister',pct:'60-80%'},
+  {id:'ki-fu-1',kink:'Free Use',wh:'Mode',action:'BOOST',seg:'Slave, Pet, Groomed Protégé, Sub',pct:'55-65%'},
+  {id:'ki-fu-2',kink:'Free Use',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Wife',pct:'60-75%'},
+  {id:'ki-uw-1',kink:'Unwilling',wh:'Mode',action:'BOOST',seg:'Slave, Groomed Protégé',pct:'55-60%'},
+  {id:'ki-uw-2',kink:'Unwilling',wh:'Mode',action:'SUPPRESS',seg:'Wife, Lover, FWB, Superior',pct:'60-70%'},
+];
+const KINK_ORDER=['Super Dom','Med Dom','Light Dom','Gentle Dom','Normal','Gentle Sub','Light Sub','Med Sub','Super Sub','Free Use','Unwilling'];
+const KINK_COLORS={'Super Dom':'#e74c3c','Med Dom':'#e67e22','Light Dom':'#f39c12','Gentle Dom':'#f1c40f','Normal':'#2ecc71','Gentle Sub':'#1abc9c','Light Sub':'#3498db','Med Sub':'#9b59b6','Super Sub':'#8e44ad','Free Use':'#6c3483','Unwilling':'#4a235a'};
+function renderKink(){renderGenericTab({tabId:'kink',rules:KINK_RULES,checked:kinkChecked,key:KINK_KEY,groupKey:'kink',groupOrder:KINK_ORDER,groupColors:KINK_COLORS,render:renderKink});}
+function resetKink(){if(!confirm('Reset kink rules?'))return;kinkChecked={};saveChecked(KINK_KEY,{});renderKink();}
+
+
+// ══════════════════════════════════════════
+// MODE DATA & RENDER
+// ══════════════════════════════════════════
+const MODE_RULES = [
+  // AGE
+  {id:'mo-ag-1819-1',trigger:'Age',group:'18-19',wh:'Mode',action:'BOOST',seg:'Younger Sister, Cousin, Groomed Protégé, Pet',pct:'50-60%'},
+  {id:'mo-ag-1819-2',trigger:'Age',group:'18-19',wh:'Mode',action:'SUPPRESS',seg:'Mother, Wife, Aunt, Superior (Teacher already hard zeroed)',pct:'70-85%'},
+  {id:'mo-ag-2024-1',trigger:'Age',group:'20-24',wh:'Mode',action:'BOOST',seg:'Younger Sister, Cousin, Groomed Protégé, Lover, FWB',pct:'40-50%'},
+  {id:'mo-ag-2024-2',trigger:'Age',group:'20-24',wh:'Mode',action:'SUPPRESS',seg:'Mother, Aunt, Superior (Teacher already hard zeroed)',pct:'50-70%'},
+  {id:'mo-ag-2529-1',trigger:'Age',group:'25-29',wh:'Mode',action:'BOOST',seg:'Lover, FWB, Wife, Older Sister, Spiteful Friend',pct:'35-50%'},
+  {id:'mo-ag-2529-2',trigger:'Age',group:'25-29',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin',pct:'40-45%'},
+  {id:'mo-ag-3035-1',trigger:'Age',group:'30-35',wh:'Mode',action:'BOOST',seg:'Wife, Lover, Older Sister, Mother, FWB',pct:'40-50%'},
+  {id:'mo-ag-3035-2',trigger:'Age',group:'30-35',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin',pct:'55%'},
+  {id:'mo-ag-3640-1',trigger:'Age',group:'36-40',wh:'Mode',action:'BOOST',seg:'Wife, Older Sister, Mother, Aunt, Superior',pct:'40-55%'},
+  {id:'mo-ag-3640-2',trigger:'Age',group:'36-40',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin',pct:'65%'},
+  {id:'mo-ag-4150-1',trigger:'Age',group:'41-50',wh:'Mode',action:'BOOST',seg:'Wife, Mother, Aunt, Older Sister, Superior',pct:'45-55%'},
+  {id:'mo-ag-4150-2',trigger:'Age',group:'41-50',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin, Lover',pct:'35-70%'},
+  {id:'mo-ag-5160-1',trigger:'Age',group:'51-60',wh:'Mode',action:'BOOST',seg:'Mother, Wife, Aunt, Older Sister, Superior',pct:'50-60%'},
+  {id:'mo-ag-5160-2',trigger:'Age',group:'51-60',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin',pct:'75%'},
+  {id:'mo-ag-6070-1',trigger:'Age',group:'60-70',wh:'Mode',action:'BOOST',seg:'Mother, Aunt, Wife, Older Sister, Superior',pct:'50-65%'},
+  {id:'mo-ag-6070-2',trigger:'Age',group:'60-70',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin, Lover',pct:'45-80%'},
+  {id:'mo-ag-7180-1',trigger:'Age',group:'71-80',wh:'Mode',action:'BOOST',seg:'Mother, Aunt, Older Sister, Wife',pct:'55-70%'},
+  {id:'mo-ag-7180-2',trigger:'Age',group:'71-80',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin, Lover, FWB',pct:'50-85%'},
+  {id:'mo-ag-80p-1',trigger:'Age',group:'80+',wh:'Mode',action:'BOOST',seg:'Mother, Aunt, Older Sister',pct:'65-70%'},
+  {id:'mo-ag-80p-2',trigger:'Age',group:'80+',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Cousin, Lover, FWB, Superior',pct:'40-90%'},
+  // BODY TYPE
+  {id:'mo-bt-buan-1',trigger:'Body Type',group:'Bulimic / Anorexic',wh:'Mode',action:'BOOST',seg:'Groomed Protégé, Pet, Sub',pct:'40-50%'},
+  {id:'mo-bt-buan-2',trigger:'Body Type',group:'Bulimic / Anorexic',wh:'Mode',action:'SUPPRESS',seg:'Mother, Superior, Teacher',pct:'55-60%'},
+  {id:'mo-bt-pet-1',trigger:'Body Type',group:'Petite',wh:'Mode',action:'BOOST',seg:'Groomed Protégé, Younger Sister, Cousin, Pet',pct:'35-40%'},
+  {id:'mo-bt-pet-2',trigger:'Body Type',group:'Petite',wh:'Mode',action:'SUPPRESS',seg:'Superior, Mother',pct:'35-45%'},
+  {id:'mo-bt-slt-1',trigger:'Body Type',group:'Slim Thick / Curvy',wh:'Mode',action:'BOOST',seg:'Lover, FWB, Wife, Spiteful Friend',pct:'35-45%'},
+  {id:'mo-bt-slt-2',trigger:'Body Type',group:'Slim Thick / Curvy',wh:'Mode',action:'SUPPRESS',seg:'Housekeeper, Slave',pct:'35%'},
+  {id:'mo-bt-udt-1',trigger:'Body Type',group:'Upside Down Triangle',wh:'Mode',action:'BOOST',seg:'Superior, Spiteful Friend, Older Sister',pct:'35-40%'},
+  {id:'mo-bt-udt-2',trigger:'Body Type',group:'Upside Down Triangle',wh:'Mode',action:'SUPPRESS',seg:'Pet, Groomed Protégé',pct:'40-45%'},
+  {id:'mo-bt-chb-1',trigger:'Body Type',group:'Chubby / Mid Size',wh:'Mode',action:'BOOST',seg:'Wife, Housekeeper, Mother',pct:'35%'},
+  {id:'mo-bt-bbw-1',trigger:'Body Type',group:'BBW',wh:'Mode',action:'BOOST',seg:'Wife, Mother, Housekeeper',pct:'35-40%'},
+  {id:'mo-bt-bbw-2',trigger:'Body Type',group:'BBW',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister',pct:'35%'},
+  {id:'mo-bt-cnk-1',trigger:'Body Type',group:'Chunky',wh:'Mode',action:'BOOST',seg:'Superior, Older Sister, Wife',pct:'35-40%'},
+  {id:'mo-bt-cnk-2',trigger:'Body Type',group:'Chunky',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Pet',pct:'40-45%'},
+  {id:'mo-bt-ssb-1',trigger:'Body Type',group:'SSBBW / USSBBW',wh:'Mode',action:'BOOST',seg:'Housekeeper, Mother, Slave',pct:'40-45%'},
+  {id:'mo-bt-ssb-2',trigger:'Body Type',group:'SSBBW / USSBBW',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Groomed Protégé',pct:'55-60%'},
+  // MENTAL STATE
+  {id:'mo-ms-aw-1',trigger:'Mental State',group:'Fully aware, sharp',wh:'Mode',action:'BOOST',seg:'Superior, Spiteful Friend, Wife, Teacher',pct:'35-45%'},
+  {id:'mo-ms-aw-2',trigger:'Mental State',group:'Fully aware, sharp',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Pet, Slave',pct:'50-55%'},
+  {id:'mo-ms-dn-1',trigger:'Mental State',group:'Aware but in denial',wh:'Mode',action:'BOOST',seg:'Spiteful Friend, Older Sister, Wife',pct:'35-45%'},
+  {id:'mo-ms-dn-2',trigger:'Mental State',group:'Aware but in denial',wh:'Mode',action:'SUPPRESS',seg:'Slave, Groomed Protégé',pct:'45%'},
+  {id:'mo-ms-pa-1',trigger:'Mental State',group:'Partially aware / confused',wh:'Mode',action:'BOOST',seg:'Groomed Protégé, Pet, Younger Sister',pct:'35-40%'},
+  {id:'mo-ms-pa-2',trigger:'Mental State',group:'Partially aware / confused',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher',pct:'50%'},
+  {id:'mo-ms-ud-1',trigger:'Mental State',group:'Mostly / completely unaware',wh:'Mode',action:'BOOST',seg:'Groomed Protégé, Pet, Slave, Younger Sister',pct:'45-60%'},
+  {id:'mo-ms-ud-2',trigger:'Mental State',group:'Mostly / completely unaware',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Spiteful Friend',pct:'55-65%'},
+  {id:'mo-ms-co-1',trigger:'Mental State',group:'Conditioned / accepts as normal',wh:'Mode',action:'BOOST',seg:'Slave, Pet, Groomed Protégé, Housekeeper',pct:'45-55%'},
+  {id:'mo-ms-co-2',trigger:'Mental State',group:'Conditioned / accepts as normal',wh:'Mode',action:'SUPPRESS',seg:'Superior, Spiteful Friend',pct:'55-60%'},
+  {id:'mo-ms-br-1',trigger:'Mental State',group:'Broken / lost sense of self',wh:'Mode',action:'BOOST',seg:'Slave, Pet, Housekeeper',pct:'60-70%'},
+  {id:'mo-ms-br-2',trigger:'Mental State',group:'Broken / lost sense of self',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Spiteful Friend, Wife',pct:'55-75%'},
+  {id:'mo-ms-es-1',trigger:'Mental State',group:'Aware and planning escape',wh:'Mode',action:'BOOST',seg:'Spiteful Friend, Sub',pct:'40-55%'},
+  {id:'mo-ms-es-2',trigger:'Mental State',group:'Aware and planning escape',wh:'Mode',action:'SUPPRESS',seg:'Slave, Pet, Groomed Protégé',pct:'55-65%'},
+  {id:'mo-ms-pr-1',trigger:'Mental State',group:'Aware and pretending',wh:'Mode',action:'BOOST',seg:'Spiteful Friend, Subordinate',pct:'45-60%'},
+  {id:'mo-ms-pr-2',trigger:'Mental State',group:'Aware and pretending',wh:'Mode',action:'SUPPRESS',seg:'Slave, Groomed Protégé',pct:'55%'},
+  // BOND & THREAT
+  {id:'mo-bt2-pl-1',trigger:'Bond & Threat',group:'Plotting / Would run / Hates',wh:'Mode',action:'BOOST',seg:'Spiteful Friend, Subordinate',pct:'50-65%'},
+  {id:'mo-bt2-pl-2',trigger:'Bond & Threat',group:'Plotting / Would run / Hates',wh:'Mode',action:'SUPPRESS',seg:'Wife, Lover, Pet, Groomed Protégé, Slave',pct:'55-75%'},
+  {id:'mo-bt2-af-1',trigger:'Bond & Threat',group:'Deeply afraid / Cold and distant',wh:'Mode',action:'BOOST',seg:'Sub, Slave, Pet, Housekeeper, Subordinate',pct:'40-45%'},
+  {id:'mo-bt2-af-2',trigger:'Bond & Threat',group:'Deeply afraid / Cold and distant',wh:'Mode',action:'SUPPRESS',seg:'Spiteful Friend, Superior, Lover',pct:'45-50%'},
+  {id:'mo-bt2-cu-1',trigger:'Bond & Threat',group:'Confused / Secretly curious',wh:'Mode',action:'BOOST',seg:'FWB, Lover, Younger Sister, Cousin, Spiteful Friend',pct:'35-50%'},
+  {id:'mo-bt2-cu-2',trigger:'Bond & Threat',group:'Confused / Secretly curious',wh:'Mode',action:'SUPPRESS',seg:'Slave, Housekeeper, Groomed Protégé',pct:'40-45%'},
+  {id:'mo-bt2-at-1',trigger:'Bond & Threat',group:'Developing attachment / Genuinely likes',wh:'Mode',action:'BOOST',seg:'Lover, FWB, Younger Sister, Older Sister',pct:'40-55%'},
+  {id:'mo-bt2-at-2',trigger:'Bond & Threat',group:'Developing attachment / Genuinely likes',wh:'Mode',action:'SUPPRESS',seg:'Spiteful Friend, Slave',pct:'40-60%'},
+  {id:'mo-bt2-pr-1',trigger:'Bond & Threat',group:'Protective / Deeply attached / Loyal',wh:'Mode',action:'BOOST',seg:'Wife, Mother, Older Sister',pct:'45-65%'},
+  {id:'mo-bt2-pr-2',trigger:'Bond & Threat',group:'Protective / Deeply attached / Loyal',wh:'Mode',action:'SUPPRESS',seg:'Spiteful Friend, Slave, Groomed Protégé',pct:'45-70%'},
+  {id:'mo-bt2-dv-1',trigger:'Bond & Threat',group:'Fully devoted / Obsessed / Would die',wh:'Mode',action:'BOOST',seg:'Wife, Mother, Slave, Pet',pct:'55-70%'},
+  {id:'mo-bt2-dv-2',trigger:'Bond & Threat',group:'Fully devoted / Obsessed / Would die',wh:'Mode',action:'SUPPRESS',seg:'Spiteful Friend, Subordinate',pct:'60-75%'},
+  // SEX EXPERIENCE
+  {id:'mo-sx-vi-1',trigger:'Sex Experience',group:'Virgin / Very limited',wh:'Mode',action:'BOOST',seg:'Groomed Protégé, Younger Sister, Cousin',pct:'50-60%'},
+  {id:'mo-sx-vi-2',trigger:'Sex Experience',group:'Virgin / Very limited',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Spiteful Friend',pct:'55-65%'},
+  {id:'mo-sx-sm-1',trigger:'Sex Experience',group:'Some experience / Average',wh:'Mode',action:'BOOST',seg:'FWB, Lover, Wife',pct:'35-40%'},
+  {id:'mo-sx-sm-2',trigger:'Sex Experience',group:'Some experience / Average',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé',pct:'40%'},
+  {id:'mo-sx-ex-1',trigger:'Sex Experience',group:'Experienced / Very experienced',wh:'Mode',action:'BOOST',seg:'Lover, Spiteful Friend, FWB, Superior',pct:'40-50%'},
+  {id:'mo-sx-ex-2',trigger:'Sex Experience',group:'Experienced / Very experienced',wh:'Mode',action:'SUPPRESS',seg:'Groomed Protégé, Younger Sister, Pet',pct:'45-60%'},
+  {id:'mo-sx-on-1',trigger:'Sex Experience',group:'Only with one person',wh:'Mode',action:'BOOST',seg:'Wife, Older Sister',pct:'40-55%'},
+  {id:'mo-sx-on-2',trigger:'Sex Experience',group:'Only with one person',wh:'Mode',action:'SUPPRESS',seg:'Spiteful Friend, Superior',pct:'50-55%'},
+  {id:'mo-sx-fo-1',trigger:'Sex Experience',group:'Experience only through force',wh:'Mode',action:'BOOST',seg:'Slave, Groomed Protégé, Sub',pct:'45-55%'},
+  {id:'mo-sx-fo-2',trigger:'Sex Experience',group:'Experience only through force',wh:'Mode',action:'SUPPRESS',seg:'Superior, Spiteful Friend, Lover',pct:'55-65%'},
+  // FINANCIAL
+  {id:'mo-fi-br-1',trigger:'Financial',group:'Dead broke / Poor',wh:'Mode',action:'BOOST',seg:'Slave, Housekeeper, Subordinate',pct:'40-50%'},
+  {id:'mo-fi-br-2',trigger:'Financial',group:'Dead broke / Poor',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Wife',pct:'40-65%'},
+  {id:'mo-fi-wk-1',trigger:'Financial',group:'Working / Lower middle class',wh:'Mode',action:'BOOST',seg:'Housekeeper, Subordinate, Wife',pct:'35-40%'},
+  {id:'mo-fi-wk-2',trigger:'Financial',group:'Working / Lower middle class',wh:'Mode',action:'SUPPRESS',seg:'Superior',pct:'35-45%'},
+  {id:'mo-fi-mc-1',trigger:'Financial',group:'Middle / Upper middle class',wh:'Mode',action:'BOOST',seg:'Wife, Lover, FWB, Superior',pct:'35-40%'},
+  {id:'mo-fi-mc-2',trigger:'Financial',group:'Middle / Upper middle class',wh:'Mode',action:'SUPPRESS',seg:'Slave, Housekeeper',pct:'30-45%'},
+  {id:'mo-fi-ri-1',trigger:'Financial',group:'Wealthy / Rich',wh:'Mode',action:'BOOST',seg:'Superior, Spiteful Friend, Teacher',pct:'40-65%'},
+  {id:'mo-fi-ri-2',trigger:'Financial',group:'Wealthy / Rich',wh:'Mode',action:'SUPPRESS',seg:'Slave, Housekeeper, Subordinate, Pet',pct:'55-70%'},
+  {id:'mo-fi-dp-1',trigger:'Financial',group:'Financially dependent',wh:'Mode',action:'BOOST',seg:'Slave, Pet, Housekeeper, Subordinate, Groomed Protégé',pct:'45-55%'},
+  {id:'mo-fi-dp-2',trigger:'Financial',group:'Financially dependent',wh:'Mode',action:'SUPPRESS',seg:'Superior, Teacher, Spiteful Friend',pct:'60-70%'},
+];
+
+const MODE_TRIGGER_ORDER=['Age','Body Type','Mental State','Bond & Threat','Sex Experience','Financial'];
+const MODE_GROUP_ORDER={
+  'Age':['18-19','20-24','25-29','30-35','36-40','41-50','51-60','60-70','71-80','80+'],
+  'Body Type':['Bulimic / Anorexic','Petite','Slim Thick / Curvy','Upside Down Triangle','Chubby / Mid Size','BBW','Chunky','SSBBW / USSBBW'],
+  'Mental State':['Fully aware, sharp','Aware but in denial','Partially aware / confused','Mostly / completely unaware','Conditioned / accepts as normal','Broken / lost sense of self','Aware and planning escape','Aware and pretending'],
+  'Bond & Threat':['Plotting / Would run / Hates','Deeply afraid / Cold and distant','Confused / Secretly curious','Developing attachment / Genuinely likes','Protective / Deeply attached / Loyal','Fully devoted / Obsessed / Would die'],
+  'Sex Experience':['Virgin / Very limited','Some experience / Average','Experienced / Very experienced','Only with one person','Experience only through force'],
+  'Financial':['Dead broke / Poor','Working / Lower middle class','Middle / Upper middle class','Wealthy / Rich','Financially dependent'],
+};
+const MODE_TRIGGER_COLORS={'Age':'#e74c3c','Body Type':'#f39c12','Mental State':'#9b59b6','Bond & Threat':'#3498db','Sex Experience':'#2ecc71','Financial':'#b8920b'};
+
+function renderMode(){
+  const tabId='mode';
+  const search=document.getElementById(tabId+'-search').value.toLowerCase();
+  const fg=document.getElementById(tabId+'-fg').value;
+  const fact=document.getElementById(tabId+'-fact').value;
+  const fst=document.getElementById(tabId+'-fst').value;
+  const filtered=MODE_RULES.filter(r=>{
+    if(fg&&r.trigger!==fg)return false;
+    if(fact&&r.action!==fact)return false;
+    if(fst==='done'&&!modeChecked[r.id])return false;
+    if(fst==='todo'&&modeChecked[r.id])return false;
+    if(search)return Object.values(r).some(v=>String(v).toLowerCase().includes(search));
+    return true;
+  });
+  const total=MODE_RULES.length,done=MODE_RULES.filter(r=>modeChecked[r.id]).length,pct=Math.round((done/total)*100);
+  document.getElementById('mode-pct').textContent=pct+'%';
+  document.getElementById('mode-sub').textContent=done+' / '+total+' rules';
+  document.getElementById('mode-bar').style.width=pct+'%';
+  document.getElementById('mode-count').textContent='Showing '+filtered.length+' of '+total+' rules';
+
+  // Group by trigger then group
+  const byTrigger={};
+  filtered.forEach(r=>{
+    if(!byTrigger[r.trigger])byTrigger[r.trigger]={};
+    if(!byTrigger[r.trigger][r.group])byTrigger[r.trigger][r.group]=[];
+    byTrigger[r.trigger][r.group].push(r);
+  });
+
+  const list=document.getElementById('mode-list');
+  list.innerHTML='';
+  if(!Object.keys(byTrigger).length){list.innerHTML='<div class="empty-state">No rules match.</div>';return;}
+
+  MODE_TRIGGER_ORDER.filter(t=>byTrigger[t]).forEach(trigger=>{
+    const color=MODE_TRIGGER_COLORS[trigger]||'#b8920b';
+    // Trigger header
+    const tHdr=document.createElement('div');
+    tHdr.style.cssText=`font-size:12px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:2px;padding:14px 0 6px;border-bottom:1px solid ${color}33;margin-bottom:8px`;
+    tHdr.textContent='▸ Trigger: '+trigger;
+    list.appendChild(tHdr);
+
+    const groupOrder=MODE_GROUP_ORDER[trigger]||Object.keys(byTrigger[trigger]);
+    groupOrder.filter(g=>byTrigger[trigger][g]).forEach(g=>{
+      const grules=byTrigger[trigger][g];
+      const gdone=grules.filter(r=>modeChecked[r.id]).length;
+      const hdr=document.createElement('div');
+      hdr.className='group-header';
+      hdr.innerHTML=`<div class="group-bar" style="background:${color}88"></div><div class="group-name" style="font-size:13px">${g}</div><div class="group-count">${gdone}/${grules.length}</div>`;
+      list.appendChild(hdr);
+      grules.forEach(r=>{
+        const done=!!modeChecked[r.id],isBoost=r.action==='BOOST';
+        const item=document.createElement('div');
+        item.className='rule-item'+(done?' done':'');
+        item.onclick=()=>{modeChecked[r.id]=!modeChecked[r.id];saveChecked(MODE_KEY,modeChecked);renderMode();};
+        item.innerHTML=`
+          <div class="checkbox ${done?'checked':''}"></div>
+          <div class="rule-body">
+            <div class="rule-badges">
+              <span class="badge badge-wheel">${r.wh}</span>
+              <span class="badge ${isBoost?'badge-boost':'badge-suppress'}">${isBoost?'▲ BOOST':'▼ SUPPRESS'}</span>
+              ${r.pct?`<span class="badge" style="background:#1a1a30;color:#8888cc">${r.pct}</span>`:''}
+            </div>
+            <div class="rule-segment ${done?'done':''}">${r.seg}</div>
+          </div>`;
+        list.appendChild(item);
+      });
+    });
+  });
+}
+function resetMode(){if(!confirm('Reset mode rules?'))return;modeChecked={};saveChecked(MODE_KEY,{});renderMode();}
+
+
+// ══════════════════════════════════════════
+// LANGUAGE DATA & RENDER
+// ══════════════════════════════════════════
+const LANG_RULES = [
+  {id:'lg-eu-gen-1',origin:'White / European (general)',wh:'Language',action:'BOOST',seg:'English only, Light foreign accent, Bilingual, Speaks formally',pct:'35-55%'},
+  {id:'lg-eu-gen-2',origin:'White / European (general)',wh:'Language',action:'SUPPRESS',seg:'Native language only, Heavy foreign accent',pct:'60-65%'},
+  {id:'lg-eu-uk-1',origin:'UK',wh:'Language',action:'BOOST',seg:'English only, Speaks formally',pct:'40-65%'},
+  {id:'lg-eu-de-1',origin:'German / Scandinavian / Slavic / French / Italian',wh:'Language',action:'BOOST',seg:'Bilingual, Light foreign accent, Moderate foreign accent',pct:'40-55%'},
+  {id:'lg-eu-de-2',origin:'German / Scandinavian / Slavic / French / Italian',wh:'Language',action:'SUPPRESS',seg:'English only, Native language only',pct:'50%'},
+  {id:'lg-bl-us-1',origin:'Black US',wh:'Language',action:'BOOST',seg:'English only, Code switcher, Strong regional US accent, Speaks casually',pct:'45-60%'},
+  {id:'lg-bl-us-2',origin:'Black US',wh:'Language',action:'SUPPRESS',seg:'Native language only, Heavy foreign accent',pct:'65-70%'},
+  {id:'lg-bl-af-1',origin:'African (non-US)',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent, Moderate foreign accent',pct:'40-50%'},
+  {id:'lg-bl-af-2',origin:'African (non-US)',wh:'Language',action:'SUPPRESS',seg:'English only',pct:'55%'},
+  {id:'lg-lt-pr-1',origin:'Puerto Rico / Caribbean',wh:'Language',action:'BOOST',seg:'Bilingual, Code switcher, Moderate foreign accent',pct:'40-60%'},
+  {id:'lg-lt-pr-2',origin:'Puerto Rico / Caribbean',wh:'Language',action:'SUPPRESS',seg:'English only, Native language only',pct:'45%'},
+  {id:'lg-lt-mx-1',origin:'Mexico / Central / South America',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent, Moderate foreign accent',pct:'40-55%'},
+  {id:'lg-lt-mx-2',origin:'Mexico / Central / South America',wh:'Language',action:'SUPPRESS',seg:'English only',pct:'50%'},
+  {id:'lg-lt-br-1',origin:'Brazil',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent',pct:'45-50%'},
+  {id:'lg-lt-br-2',origin:'Brazil',wh:'Language',action:'SUPPRESS',seg:'English only',pct:'55%'},
+  {id:'lg-ea-gen-1',origin:'East Asian (general)',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent, Moderate foreign accent',pct:'40-55%'},
+  {id:'lg-ea-gen-2',origin:'East Asian (general)',wh:'Language',action:'SUPPRESS',seg:'English only, Speaks casually',pct:'40-60%'},
+  {id:'lg-ea-hk-1',origin:'Hong Kong',wh:'Language',action:'BOOST',seg:'Bilingual, Multilingual, Light foreign accent',pct:'40-60%'},
+  {id:'lg-sa-fil-1',origin:'Filipino',wh:'Language',action:'BOOST',seg:'Bilingual, Light foreign accent, Moderate foreign accent',pct:'40-65%'},
+  {id:'lg-sa-fil-2',origin:'Filipino',wh:'Language',action:'SUPPRESS',seg:'Native language only',pct:'55%'},
+  {id:'lg-sa-oth-1',origin:'Other South / Southeast Asian',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent, Moderate foreign accent',pct:'40-50%'},
+  {id:'lg-sa-oth-2',origin:'Other South / Southeast Asian',wh:'Language',action:'SUPPRESS',seg:'English only, Speaks casually',pct:'45-55%'},
+  {id:'lg-pi-hi-1',origin:'Hawaiian',wh:'Language',action:'BOOST',seg:'English only, Strong regional US accent, Code switcher',pct:'40-55%'},
+  {id:'lg-pi-hi-2',origin:'Hawaiian',wh:'Language',action:'SUPPRESS',seg:'Native language only',pct:'60%'},
+  {id:'lg-pi-oth-1',origin:'Samoan / Tongan / Fijian / Micronesian',wh:'Language',action:'BOOST',seg:'Bilingual, Moderate foreign accent, Native language only',pct:'40-55%'},
+  {id:'lg-pi-oth-2',origin:'Samoan / Tongan / Fijian / Micronesian',wh:'Language',action:'SUPPRESS',seg:'English only',pct:'45%'},
+  {id:'lg-pe-gen-1',origin:'Persian / Middle Eastern',wh:'Language',action:'BOOST',seg:'Native language only, Bilingual, Heavy foreign accent, Speaks formally',pct:'40-50%'},
+  {id:'lg-pe-gen-2',origin:'Persian / Middle Eastern',wh:'Language',action:'SUPPRESS',seg:'English only, Speaks casually, Code switcher',pct:'40-55%'},
+  {id:'lg-na-gen-1',origin:'Native American',wh:'Language',action:'BOOST',seg:'English only, Code switcher, Strong regional US accent',pct:'40-55%'},
+  {id:'lg-na-gen-2',origin:'Native American',wh:'Language',action:'SUPPRESS',seg:'Native language only, Heavy foreign accent',pct:'60-65%'},
+];
+const LANG_ORDER=['White / European (general)','UK','German / Scandinavian / Slavic / French / Italian','Black US','African (non-US)','Puerto Rico / Caribbean','Mexico / Central / South America','Brazil','East Asian (general)','Hong Kong','Filipino','Other South / Southeast Asian','Hawaiian','Samoan / Tongan / Fijian / Micronesian','Persian / Middle Eastern','Native American'];
+const LANG_COLORS={'White / European (general)':'#3498db','UK':'#2980b9','German / Scandinavian / Slavic / French / Italian':'#1a5276','Black US':'#e74c3c','African (non-US)':'#c0392b','Puerto Rico / Caribbean':'#f39c12','Mexico / Central / South America':'#e67e22','Brazil':'#27ae60','East Asian (general)':'#9b59b6','Hong Kong':'#8e44ad','Filipino':'#2ecc71','Other South / Southeast Asian':'#1abc9c','Hawaiian':'#d35400','Samoan / Tongan / Fijian / Micronesian':'#e59866','Persian / Middle Eastern':'#b7950b','Native American':'#784212'};
+function renderLang(){renderGenericTab({tabId:'lang',rules:LANG_RULES,checked:langChecked,key:LANG_KEY,groupKey:'origin',groupOrder:LANG_ORDER,groupColors:LANG_COLORS,render:renderLang});}
+function resetLang(){if(!confirm('Reset language rules?'))return;langChecked={};saveChecked(LANG_KEY,{});renderLang();}
+
+// ══════════════════════════════════════════
+// INJECT NEW TAB HTML & FINISH INIT
+// ══════════════════════════════════════════
+// Init all tabs on load
+window.addEventListener('load', () => {
+  initGenericDropdown('cup', CUP_RULES, 'cup', 'Cup Brackets', CUP_ORDER);
+  initGenericDropdown('ass', ASS_RULES, 'ass', 'Ass Sizes', ASS_ORDER);
+  initGenericDropdown('mouth', MOUTH_RULES, 'lip', 'Lip Types', MOUTH_ORDER);
+  initGenericDropdown('sens', SENS_RULES, 'region', 'Regions', SENS_ORDER);
+  initGenericDropdown('kink', KINK_RULES, 'kink', 'Kink', KINK_ORDER);
+  initGenericDropdown('lang', LANG_RULES, 'origin', 'Origins', LANG_ORDER);
+  const modeSel = document.getElementById('mode-fg');
+  if(modeSel) MODE_TRIGGER_ORDER.forEach(t => { const o=document.createElement('option'); o.value=t; o.textContent=t; modeSel.appendChild(o); });
+});
 </script>
+
+<div id="tab-cup" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Cup Size Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="cup-pct">0%</div><div class="header-sub" id="cup-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="cup-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="cup-search" placeholder="Search..." oninput="renderCup()">
+    <div class="filter-row">
+      <select class="filter-select" id="cup-fg" onchange="renderCup()"><option value="">All Cup Bracket</option></select>
+      <select class="filter-select" id="cup-fact" onchange="renderCup()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="cup-fst" onchange="renderCup()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetCup()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="cup-count"></div>
+  <div class="rules-list" id="cup-list"></div>
+</div>
+<div id="tab-ass" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Ass Size Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="ass-pct">0%</div><div class="header-sub" id="ass-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="ass-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="ass-search" placeholder="Search..." oninput="renderAss()">
+    <div class="filter-row">
+      <select class="filter-select" id="ass-fg" onchange="renderAss()"><option value="">All Ass Size</option></select>
+      <select class="filter-select" id="ass-fact" onchange="renderAss()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="ass-fst" onchange="renderAss()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetAss()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="ass-count"></div>
+  <div class="rules-list" id="ass-list"></div>
+</div>
+<div id="tab-mouth" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Mouth Profile Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="mouth-pct">0%</div><div class="header-sub" id="mouth-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="mouth-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="mouth-search" placeholder="Search..." oninput="renderMouth()">
+    <div class="filter-row">
+      <select class="filter-select" id="mouth-fg" onchange="renderMouth()"><option value="">All Lip Type</option></select>
+      <select class="filter-select" id="mouth-fact" onchange="renderMouth()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="mouth-fst" onchange="renderMouth()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetMouth()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="mouth-count"></div>
+  <div class="rules-list" id="mouth-list"></div>
+</div>
+<div id="tab-sens" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Sensation Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="sens-pct">0%</div><div class="header-sub" id="sens-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="sens-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="sens-search" placeholder="Search..." oninput="renderSens()">
+    <div class="filter-row">
+      <select class="filter-select" id="sens-fg" onchange="renderSens()"><option value="">All Region</option></select>
+      <select class="filter-select" id="sens-fact" onchange="renderSens()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="sens-fst" onchange="renderSens()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetSens()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="sens-count"></div>
+  <div class="rules-list" id="sens-list"></div>
+</div>
+<div id="tab-kink" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Kink Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="kink-pct">0%</div><div class="header-sub" id="kink-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="kink-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="kink-search" placeholder="Search..." oninput="renderKink()">
+    <div class="filter-row">
+      <select class="filter-select" id="kink-fg" onchange="renderKink()"><option value="">All Kink</option></select>
+      <select class="filter-select" id="kink-fact" onchange="renderKink()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="kink-fst" onchange="renderKink()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetKink()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="kink-count"></div>
+  <div class="rules-list" id="kink-list"></div>
+</div>
+<div id="tab-mode" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Mode Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="mode-pct">0%</div><div class="header-sub" id="mode-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="mode-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="mode-search" placeholder="Search..." oninput="renderMode()">
+    <div class="filter-row">
+      <select class="filter-select" id="mode-fg" onchange="renderMode()"><option value="">All Trigger</option></select>
+      <select class="filter-select" id="mode-fact" onchange="renderMode()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="mode-fst" onchange="renderMode()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetMode()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="mode-count"></div>
+  <div class="rules-list" id="mode-list"></div>
+</div>
+<div id="tab-lang" class="tab-content">
+  <div class="header">
+    <div class="header-top">
+      <div><div class="header-eyebrow">The Wheel</div><div class="header-title">Language Rules</div></div>
+      <div style="text-align:right"><div class="header-pct" id="lang-pct">0%</div><div class="header-sub" id="lang-sub">0 / 0 rules</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="lang-bar" style="width:0%"></div></div>
+  </div>
+  <div class="controls">
+    <input class="search-input" id="lang-search" placeholder="Search..." oninput="renderLang()">
+    <div class="filter-row">
+      <select class="filter-select" id="lang-fg" onchange="renderLang()"><option value="">All Origin</option></select>
+      <select class="filter-select" id="lang-fact" onchange="renderLang()"><option value="">All</option><option value="BOOST">Boost</option><option value="SUPPRESS">Suppress</option></select>
+      <select class="filter-select" id="lang-fst" onchange="renderLang()"><option value="">All Status</option><option value="todo">To Do</option><option value="done">Done</option></select>
+      <button class="reset-btn" onclick="resetLang()">Reset</button>
+    </div>
+  </div>
+  <div class="count-line" id="lang-count"></div>
+  <div class="rules-list" id="lang-list"></div>
+</div>
 </body>
 </html>
